@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Productos · Ventas La Yola</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#f5f5f7;color:#111}
+header{position:sticky;top:0;z-index:5;background:#fff;padding:14px 12px 10px;border-bottom:1px solid #ddd}
+h1{font-size:22px;margin:0 0 6px}
+.sync{font-size:12px;color:#666}
+main{padding:12px 12px 40px;max-width:760px;margin:auto}
+.category{font-weight:800;font-size:19px;margin:20px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.product{background:#fff;border-radius:14px;margin:7px 0;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.product.hidden{opacity:.55}
+.pname{font-weight:700}
+.ptag{font-size:12px;color:#a00;font-weight:700}
+.controls{display:flex;align-items:center;gap:8px}
+.priceInput{width:86px;padding:9px;border:1px solid #ccc;border-radius:10px;font-size:16px;text-align:right}
+.iconbtn{border:0;background:#eee;border-radius:10px;padding:9px 11px;font-size:16px}
+.iconbtn.danger{background:#fee;color:#a00}
+.iconbtn.ok{background:#e6f4ea;color:#188038}
+.card{background:#fff;border-radius:14px;padding:16px;margin:16px 0}
+.card h2{margin:0 0 10px;font-size:18px}
+.field{width:100%;padding:12px;border:1px solid #ddd;border-radius:12px;font-size:16px;margin:4px 0 12px}
+.row2{display:flex;gap:10px}
+.row2>*{flex:1}
+.primary{width:100%;padding:14px;border:0;border-radius:12px;background:#111;color:#fff;font-size:16px;font-weight:700}
+.toggle{background:none;border:0;color:#0066cc;font-size:14px;padding:6px 0}
+.muted{color:#666;font-size:13px}
+.empty{background:#fff;border-radius:14px;padding:20px;text-align:center;color:#666}
+</style>
+<script src="firebase-config.js"></script>
+</head>
+<body>
+<header>
+  <h1>🧺 Productos</h1>
+  <div id="sync" class="sync">Conectando…</div>
+</header>
+<main id="app"></main>
+
+<script>
+const DEFAULT_PRODUCTS=[
+  {cat:'Bebidas',items:[['Refresco',1.8],['Agua P',1],['Agua G',1.5],['Agua Gas',1.2],['Batido',4.5],['Zumo',1.6]]},
+  {cat:'Cerveza',items:[['Cerveza',1.6],['Caña',1.5],['Heineken',1.5],['18/70',1.8],['Piña colada',5],['Radler',1.6],['Águila',1.8],['Jarra',2.5],['Heineken 00',1.6]]},
+  {cat:'Pizzas',items:[['Queso',7.6],['Pimientos',8.1],['Atún',9.3],['Jamón',8.1],['Chorizo',8.1],['Cebolla',8.1],['Bacon',8.1],['Hawaiana',8.7],['Mixta',9.5],['Agregos',1],['Extra queso',3.5],['Extra de carne',3.5]]},
+  {cat:'Especialidades',items:[['Tamal',5.5],['Frituras de maíz',3.5],['Lechón',6],['Minuta',6]]},
+  {cat:'Café',items:[['Solo',1.1],['Cortado',1.2],['Café con leche',1.4],['Barraquito',1.3]]},
+  {cat:'Varios',items:[['Caja de llevar',.3]]}
+];
+
+let db, ref, onValue, set;
+let products=DEFAULT_PRODUCTS.map(c=>({cat:c.cat,items:c.items.map(x=>[x[0],x[1],false])}));
+let showHidden=false;
+let newCat='', newName='', newPrice='', usingNewCat=false;
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function money(n){return new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(n)||0)}
+function path(p){return ref(db,p)}
+function sync(t,ok=false){const e=document.getElementById('sync');e.textContent=t;e.style.color=ok?'#188038':'#666'}
+function key(cat,name){return String(cat).trim().toLowerCase()+'\u0000'+String(name).trim().toLowerCase()}
+const defaultKeys=new Set(DEFAULT_PRODUCTS.flatMap(c=>c.items.map(x=>key(c.cat,x[0]))));
+
+function normalizeProducts(v){
+  const src=Array.isArray(v)?v:(v&&typeof v==='object'?Object.values(v):[]);
+  const flat=[];
+  for(const c of src){
+    if(!c)continue;
+    const cat=String(c.cat||c.category||'Varios').trim();
+    const items=Array.isArray(c.items)?c.items:(c.items&&typeof c.items==='object'?Object.values(c.items):[]);
+    for(const it of items){
+      if(Array.isArray(it)&&it[0])flat.push({cat,name:String(it[0]).trim(),price:Number(it[1]),hidden:!!it[2]});
+      else if(it&&it.name)flat.push({cat,name:String(it.name).trim(),price:Number(it.price),hidden:!!it.hidden});
+    }
+  }
+  const map=new Map(flat.map(x=>[key(x.cat,x.name),x]));
+  const out=DEFAULT_PRODUCTS.map(c=>({cat:c.cat,items:c.items.map(x=>{
+    const q=map.get(key(c.cat,x[0]));
+    const p=q&&Number.isFinite(q.price)&&q.price>0?q.price:x[1];
+    return [x[0],p,q?!!q.hidden:false];
+  })}));
+  const known=new Set(out.flatMap(c=>c.items.map(x=>key(c.cat,x[0]))));
+  for(const q of flat){
+    const k=key(q.cat,q.name);
+    if(known.has(k))continue;
+    let c=out.find(x=>x.cat.toLowerCase()===q.cat.toLowerCase());
+    if(!c){c={cat:q.cat,items:[]};out.push(c)}
+    c.items.push([q.name,Number.isFinite(q.price)&&q.price>0?q.price:0,!!q.hidden]);
+    known.add(k);
+  }
+  return out;
+}
+
+async function init(){
+  try{
+    const f=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js');
+    const a=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js');
+    const r=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js');
+    const app=f.initializeApp(window.VENTAS_FIREBASE_CONFIG);
+    await a.signInAnonymously(a.getAuth(app));
+    ({ref,onValue,set}=r);
+    db=r.getDatabase(app);
+    onValue(path('ventas_la_yola/productos'),s=>{
+      const v=s.val();
+      products=normalizeProducts(v);
+      if(!v)set(path('ventas_la_yola/productos'),products);
+      render();
+      sync('Sincronizado',true);
+    });
+  }catch(e){console.error(e);sync('Error de conexión')}
+}
+async function saveProducts(){await set(path('ventas_la_yola/productos'),products)}
+
+function updatePrice(cat,name,val){
+  const c=products.find(x=>x.cat===cat);if(!c)return;
+  const it=c.items.find(x=>x[0]===name);if(!it)return;
+  const p=parseFloat(val);
+  it[1]=Number.isFinite(p)&&p>=0?p:0;
+  saveProducts();
+}
+function deleteItem(cat,name){
+  const isDefault=defaultKeys.has(key(cat,name));
+  const msg=isDefault
+    ? `"${name}" es un producto original del menú. No se puede borrar del todo, pero se puede ocultar para que no aparezca en el comandero. ¿Ocultarlo?`
+    : `¿Eliminar definitivamente "${name}"?`;
+  if(!confirm(msg))return;
+  const c=products.find(x=>x.cat===cat);if(!c)return;
+  if(isDefault){
+    const it=c.items.find(x=>x[0]===name);if(it)it[2]=true;
+  }else{
+    c.items=c.items.filter(x=>x[0]!==name);
+  }
+  saveProducts();render();
+}
+function restoreItem(cat,name){
+  const c=products.find(x=>x.cat===cat);if(!c)return;
+  const it=c.items.find(x=>x[0]===name);if(it)it[2]=false;
+  saveProducts();render();
+}
+function toggleShowHidden(){showHidden=!showHidden;render()}
+
+function addProduct(){
+  const cat=(usingNewCat?newCat:document.getElementById('addCat').value).trim();
+  const name=document.getElementById('addName').value.trim();
+  const price=parseFloat(document.getElementById('addPrice').value);
+  if(!cat){alert('Elige o escribe una categoría.');return}
+  if(!name){alert('Escribe el nombre del producto.');return}
+  if(!Number.isFinite(price)||price<0){alert('Escribe un precio válido.');return}
+  let c=products.find(x=>x.cat.toLowerCase()===cat.toLowerCase());
+  if(!c){c={cat,items:[]};products.push(c)}
+  if(c.items.some(x=>x[0].toLowerCase()===name.toLowerCase()&&!x[2])){
+    alert('Ya existe un producto con ese nombre en esa categoría.');return;
+  }
+  c.items.push([name,price,false]);
+  saveProducts();
+  newCat='';newName='';newPrice='';usingNewCat=false;
+  render();
+}
+function toggleNewCat(v){
+  usingNewCat=v;
+  render();
+}
+
+function render(){
+  const active=document.activeElement;
+  const activeId=active&&active.id;
+  const selStart=active&&typeof active.selectionStart==='number'?active.selectionStart:null;
+  const app=document.getElementById('app');
+  let h='';
+  let catIdx=0;
+  for(const c of products){
+    const items=c.items.filter(x=>showHidden||!x[2]);
+    if(!items.length){catIdx++;continue}
+    h+=`<div class="category">${esc(c.cat)}</div>`;
+    let itemIdx=0;
+    for(const [name,price,hidden] of items){
+      const inputId='price-'+catIdx+'-'+itemIdx;
+      h+=`<div class="product ${hidden?'hidden':''}">
+        <div><div class="pname">${esc(name)}</div>${hidden?'<div class="ptag">Oculto — no aparece en el comandero</div>':''}</div>
+        <div class="controls">
+          <input id="${inputId}" class="priceInput" type="number" step="0.01" min="0" value="${price}" onchange="updatePrice('${esc(c.cat)}','${esc(name)}',this.value)">
+          ${hidden
+            ?`<button class="iconbtn ok" onclick="restoreItem('${esc(c.cat)}','${esc(name)}')">↩️</button>`
+            :`<button class="iconbtn danger" onclick="deleteItem('${esc(c.cat)}','${esc(name)}')">🗑️</button>`}
+        </div>
+      </div>`;
+      itemIdx++;
+    }
+    catIdx++;
+  }
+  if(!h)h='<div class="empty">No hay productos para mostrar.</div>';
+
+  h+=`<button class="toggle" onclick="toggleShowHidden()">${showHidden?'🙈 Ocultar los productos ocultos':'👁️ Ver también los productos ocultos'}</button>`;
+
+  const categoryNames=products.map(c=>c.cat);
+  h+=`<div class="card">
+    <h2>➕ Agregar producto</h2>
+    ${usingNewCat
+      ? `<input id="newCatInput" class="field" placeholder="Nombre de la nueva categoría" oninput="newCat=this.value">
+         <button class="toggle" onclick="toggleNewCat(false)">← Elegir una categoría existente</button>`
+      : `<select id="addCat" class="field">${categoryNames.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
+         <button class="toggle" onclick="toggleNewCat(true)">+ Crear una categoría nueva</button>`
+    }
+    <input id="addName" class="field" placeholder="Nombre del producto" value="${esc(newName)}" oninput="newName=this.value">
+    <input id="addPrice" class="field" type="number" step="0.01" min="0" placeholder="Precio" value="${esc(newPrice)}" oninput="newPrice=this.value">
+    <button class="primary" onclick="addProduct()">Agregar producto</button>
+  </div>`;
+
+  app.innerHTML=h;
+  if(activeId){
+    const el=document.getElementById(activeId);
+    if(el){el.focus();if(selStart!=null&&el.setSelectionRange)try{el.setSelectionRange(selStart,selStart)}catch(e){}}
+  }
+}
+
+init();render();
+</script>
+</body>
+</html>
