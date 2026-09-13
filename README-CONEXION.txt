@@ -20,3 +20,7 @@ Cómo funciona "eliminar":
 Recomendación: despliega este ZIP como un tercer sitio en Cloudflare Pages
 (por ejemplo, productos.tudominio.workers.dev), conectado a su propio
 repositorio de GitHub, igual que hiciste con los otros dos.
+
+Confiabilidad:
+- Aviso de "Sin conexión" visible en pantalla: avisa que no se cierre la
+  pestaña mientras no haya internet, para no perder cambios sin guardar.
