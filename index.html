@@ -9,17 +9,20 @@
 *{box-sizing:border-box}
 body{margin:0;background:#f5f5f7;color:#111}
 header{position:sticky;top:0;z-index:5;background:#fff;padding:14px 12px 10px;border-bottom:1px solid #ddd}
+.headerInner{max-width:1200px;margin:auto}
 h1{font-size:22px;margin:0 0 6px}
 .sync{font-size:12px;color:#666}
-main{padding:12px 12px 40px;max-width:760px;margin:auto}
+main{padding:16px 20px 40px;max-width:1200px;margin:auto}
+.layout{display:block}
 .category{font-weight:800;font-size:19px;margin:20px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.categoryGrid{display:block}
 .product{background:#fff;border-radius:14px;margin:7px 0;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
 .product.hidden{opacity:.55}
 .pname{font-weight:700}
 .ptag{font-size:12px;color:#a00;font-weight:700}
 .controls{display:flex;align-items:center;gap:8px}
 .priceInput{width:86px;padding:9px;border:1px solid #ccc;border-radius:10px;font-size:16px;text-align:right}
-.iconbtn{border:0;background:#eee;border-radius:10px;padding:9px 11px;font-size:16px}
+.iconbtn{border:0;background:#eee;border-radius:10px;padding:9px 11px;font-size:16px;cursor:pointer}
 .iconbtn.danger{background:#fee;color:#a00}
 .iconbtn.ok{background:#e6f4ea;color:#188038}
 .card{background:#fff;border-radius:14px;padding:16px;margin:16px 0}
@@ -27,17 +30,28 @@ main{padding:12px 12px 40px;max-width:760px;margin:auto}
 .field{width:100%;padding:12px;border:1px solid #ddd;border-radius:12px;font-size:16px;margin:4px 0 12px}
 .row2{display:flex;gap:10px}
 .row2>*{flex:1}
-.primary{width:100%;padding:14px;border:0;border-radius:12px;background:#111;color:#fff;font-size:16px;font-weight:700}
-.toggle{background:none;border:0;color:#0066cc;font-size:14px;padding:6px 0}
+.primary{width:100%;padding:14px;border:0;border-radius:12px;background:#111;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+.toggle{background:none;border:0;color:#0066cc;font-size:14px;padding:6px 0;cursor:pointer}
 .muted{color:#666;font-size:13px}
 .empty{background:#fff;border-radius:14px;padding:20px;text-align:center;color:#666}
+
+@media (min-width:900px){
+  header{padding:16px 20px 12px}
+  main{padding:20px 24px 40px}
+  .layout{display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start}
+  .categoryGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+  .categoryGrid .product{margin:0}
+  .addCard{position:sticky;top:96px}
+}
 </style>
 <script src="firebase-config.js"></script>
 </head>
 <body>
 <header>
-  <h1>🧺 Productos</h1>
-  <div id="sync" class="sync">Conectando…</div>
+  <div class="headerInner">
+    <h1>🧺 Productos</h1>
+    <div id="sync" class="sync">Conectando…</div>
+  </div>
 </header>
 <main id="app"></main>
 
@@ -168,16 +182,16 @@ function render(){
   const activeId=active&&active.id;
   const selStart=active&&typeof active.selectionStart==='number'?active.selectionStart:null;
   const app=document.getElementById('app');
-  let h='';
+  let left='';
   let catIdx=0;
   for(const c of products){
     const items=c.items.filter(x=>showHidden||!x[2]);
     if(!items.length){catIdx++;continue}
-    h+=`<div class="category">${esc(c.cat)}</div>`;
+    left+=`<div class="category">${esc(c.cat)}</div><div class="categoryGrid">`;
     let itemIdx=0;
     for(const [name,price,hidden] of items){
       const inputId='price-'+catIdx+'-'+itemIdx;
-      h+=`<div class="product ${hidden?'hidden':''}">
+      left+=`<div class="product ${hidden?'hidden':''}">
         <div><div class="pname">${esc(name)}</div>${hidden?'<div class="ptag">Oculto — no aparece en el comandero</div>':''}</div>
         <div class="controls">
           <input id="${inputId}" class="priceInput" type="number" step="0.01" min="0" value="${price}" onchange="updatePrice('${esc(c.cat)}','${esc(name)}',this.value)">
@@ -188,14 +202,15 @@ function render(){
       </div>`;
       itemIdx++;
     }
+    left+=`</div>`;
     catIdx++;
   }
-  if(!h)h='<div class="empty">No hay productos para mostrar.</div>';
+  if(!left)left='<div class="empty">No hay productos para mostrar.</div>';
 
-  h+=`<button class="toggle" onclick="toggleShowHidden()">${showHidden?'🙈 Ocultar los productos ocultos':'👁️ Ver también los productos ocultos'}</button>`;
+  left+=`<button class="toggle" onclick="toggleShowHidden()">${showHidden?'🙈 Ocultar los productos ocultos':'👁️ Ver también los productos ocultos'}</button>`;
 
   const categoryNames=products.map(c=>c.cat);
-  h+=`<div class="card">
+  const right=`<div class="card addCard">
     <h2>➕ Agregar producto</h2>
     ${usingNewCat
       ? `<input id="newCatInput" class="field" placeholder="Nombre de la nueva categoría" oninput="newCat=this.value">
@@ -207,6 +222,8 @@ function render(){
     <input id="addPrice" class="field" type="number" step="0.01" min="0" placeholder="Precio" value="${esc(newPrice)}" oninput="newPrice=this.value">
     <button class="primary" onclick="addProduct()">Agregar producto</button>
   </div>`;
+
+  const h=`<div class="layout"><div class="catList">${left}</div>${right}</div>`;
 
   app.innerHTML=h;
   if(activeId){
